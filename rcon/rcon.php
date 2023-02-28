@@ -7,14 +7,9 @@
  */
 class Rcon {
 
-	private $host;
-	private $port;
-	private $password;
-	private $timeout;
-
 	private $socket;
 
-	private $authorized;
+	private ?bool $authorized = null;
 	private $last_response;
 
 	const PACKET_AUTHORIZE = 5;
@@ -25,41 +20,47 @@ class Rcon {
 	const SERVERDATA_EXECCOMMAND = 2;
 	const SERVERDATA_RESPONSE_VALUE = 0;
 
-	public function __construct($host, $port, $password, $timeout)
-	{
-		$this->host = $host;
-		$this->port = $port;
-		$this->password = $password;
-		$this->timeout = $timeout;
+    private $host;
+    private $port;
+    private $password;
+    private $timeout;
 
-	}
+    public function __construct($host, $port, $password, $timeout)
+    {
+        $this->host = $host;
+        $this->port = $port;
+        $this->password = $password;
+        $this->timeout = $timeout;
+    }
 
 	public function get_response() {
 		return $this->last_response;
 	}
 
 	public function connect() {
+        error_reporting(0);
+        try {
+            $this->socket = fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
 
-		@$this->socket = fsockopen($this->host, $this->port, $errno, $errstr, $this->timeout);
+            if (!$this->socket) {
+                throw new Exception();
+            }
+        } catch (Throwable) {
+            echo 'Server is offline.';
+            return false;
+        }
 
-		if (!$this->socket)
-		{
-			$this->last_response = $errstr;
-			echo 'Server is offline.';
-			return false;
-		}
+        //set timeout
+        stream_set_timeout($this->socket, 3, 0);
 
-		//set timeout
-		stream_set_timeout($this->socket, 3, 0);
+        //authorize
+        $auth = $this->authorize();
 
-		//authorize
-		$auth = $this->authorize();
+        if ($auth) {
+            return true;
+        }
 
-		if ($auth) {
-			return true;
-		}
-
-		return false;
+        return false;
 	}
 
 	public function disconnect()
@@ -83,6 +84,7 @@ class Rcon {
 
 		// get response.
 		$response_packet = $this->read_packet();
+
 		if ($response_packet['id'] == Rcon::PACKET_COMMAND)
 		{
 			if ($response_packet['type'] == Rcon::SERVERDATA_RESPONSE_VALUE)

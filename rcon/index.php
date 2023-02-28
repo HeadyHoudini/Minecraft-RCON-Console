@@ -1,5 +1,5 @@
 <?php
-/*
+/**
 This file is part of Minecraft-RCON-Console.
 
     Minecraft-RCON-Console is free software: you can redistribute it and/or modify
@@ -16,8 +16,8 @@ This file is part of Minecraft-RCON-Console.
     along with Minecraft-RCON-Console.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-require 'rcon.php';
-require '../config.php';
+require __DIR__ . '/rcon.php';
+require __DIR__ . '/../config.php';
 
 $host = $rconHost; // Server host name or IP
 $port = $rconPort;                      // Port rcon is listening on
@@ -31,27 +31,9 @@ if(!isset($_POST['cmd'])) return;
 if ($rcon->connect())
 {
 	$rcon->send_command($_POST['cmd']);
-	//echo $rcon->get_response();
-	echo preg_replace("/§./", "", $rcon->get_response()); //remove some invalid char
+	$_SESSION['LAST_ACTIVITY'] = time();
+	echo preg_replace("/§./", "", (string) $rcon->get_response()); //remove some invalid char
+} else {
+    echo "creds_incorrect";
 }
-
-//if(!isset($_REQUEST['case'])) return;
-
-/*switch ($_REQUEST['case'])
-{
-case "give" : 
-if(!isset($_REQUEST[playername]) || !isset($_REQUEST[itemid]) || !isset($_REQUEST[amount])) return;
-$playername = $_REQUEST[playername];
-$itemid = $_REQUEST[itemid];
-$amount = $_REQUEST[amount];
-if ($rcon->connect())
-{
-	$rcon->send_command("give $playername $itemid $amount");
-	echo $rcon->get_response();
-}
-break;
-default: break;
-
-}
-*/
 ?>

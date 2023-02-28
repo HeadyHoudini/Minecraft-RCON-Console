@@ -1,214 +1,215 @@
 <?php
 /**
- * Connects to a minecraft server using the [Gamespy?] Query protocol.
- * more info on the protocol can be found at
- * http://wiki.vg/Query
- *
- * @copyright 2013 Chris Churchwell
- *
+ * Copyright (c) 2015 Pavel Djundik
+ * MIT License: http://opensource.org/licenses/MIT
  */
+
+namespace xPaw;
+
+use Exception;
+
 class Query {
 
-	private $host;
-	private $port;
-	private $timeout;
+	private $Socket;
+	private $ServerAddress;
+	private $ServerPort;
+	private $Timeout;
 
-	private $token = null;
-
-	private $socket;
-
-	private $errstr = "";
-
-	const SESSION_ID = 2;
-
-	const TYPE_HANDSHAKE = 0x09;
-	const TYPE_STAT = 0x00;
-
-	public function __construct($host, $port=25565, $timeout=3, $auto_connect = false) {
-
-		$this->host = $host;
-		$this->port = $port;
-		$this->timeout = $timeout;
-
-		if (is_array($host))
-		{
-		  $this->host = $host['host'];
-		  $this->port = empty($host['port'])?$port:$host['port'];
-		  $this->timeout = empty($host['timeout'])?$timeout:$host['timeout'];
-		  $auto_connect = empty($host['auto_connect'])?$auto_connect:$host['auto_connect'];
-		}
-
-		if ($auto_connect === true) {
-			$this->connect();
-		}
-
-	}
-
-	/**
-	 * Returns the description of the last error produced.
-	 *
-	 * @return String - Last error string.
-	 */
-	public function get_error() {
-		return $this->errstr;
-	}
-
-	/**
-	 * Checks whether or not the current connection is established.
-	 *
-	 * @return boolean - True if connected; false otherwise.
-	 */
-	public function is_connected() {
-		if (empty($this->token)) return false;
-		return true;
-	}
-
-	/**
-	 * Disconnects!
-	 * duh
-	 */
-	public function disconnect() {
-		if ($this->socket) {
-			fclose($this->socket);
-		}
-	}
-
-	/**
-	 * Connects to the host via UDP with the provided credentials.
-	 * @return boolean - true if successful, false otherwise.
-	 */
-	public function connect()
+	public function __construct( $Address, $Port = 25565, $Timeout = 200, $ResolveSRV = true )
 	{
-		$this->socket = fsockopen( 'udp://' . $this->host, $this->port, $errno, $errstr, $this->timeout );
+		$this->ServerAddress = $Address;
+		$this->ServerPort = (int)$Port;
+		$this->Timeout = (int)$Timeout;
 
-		if (!$this->socket)
+		if( $ResolveSRV )
 		{
-			$this->errstr = $errstr;
-			return false;
+			$this->ResolveSRV();
 		}
 
-		stream_set_timeout( $this->socket, $this->timeout );
-		stream_set_blocking( $this->socket, true );
-
-		return $this->get_challenge();
-
+		$this->Connect( );
 	}
 
-	/**
-	 * Authenticates with the host server and saves the authentication token to a class var.
-	 *
-	 * @return boolean - True if succesfull; false otherwise.
-	 */
-	private function get_challenge()
+	public function __destruct( )
 	{
-		if (!$this->socket)
-		{
-			return false;
-		}
-
-		//build packet to get challenge.
-		$packet = pack("c3N", 0xFE, 0xFD, Query::TYPE_HANDSHAKE, Query::SESSION_ID);
-
-		//write packet
-		if ( fwrite($this->socket, $packet, strlen($packet)) === FALSE) {
-			$this->errstr = "Unable to write to socket";
-			return false;
-		}
-
-		//read packet.
-		$response = fread($this->socket, 2056);
-
-		if (empty($response)) {
-			$this->errstr = "Unable to authenticate connection";
-			return false;
-		}
-
-		$response_data = unpack("c1type/N1id/a*token", $response);
-
-		if (!isset($response_data['token']) || empty($response_data['token'])) {
-			$this->errstr = "Unable to authenticate connection.";
-			return false;
-		}
-
-		$this->token = $response_data['token'];
-
-		return true;
-
+		$this->Close( );
 	}
 
-	/**
-	 * Gets all the info from the server.
-	 *
-	 * @return boolean|array - Returns the data in an array, or false if there was an error.
-	 */
-	public function get_info()
+	public function Close( )
 	{
-		if (!$this->is_connected()) {
-			$this->errstr = "Not connected to host";
-			return false;
+		if( $this->Socket !== null )
+		{
+			\fclose( $this->Socket );
+
+			$this->Socket = null;
 		}
-		//build packet to get info
-		$packet = pack("c3N2", 0xFE, 0xFD, Query::TYPE_STAT, Query::SESSION_ID, $this->token);
+	}
 
-		//add the full stat thingy.
-		$packet = $packet . pack("c4", 0x00, 0x00, 0x00, 0x00);
+	public function Connect( )
+	{
+		$this->Socket = @\fsockopen( $this->ServerAddress, $this->ServerPort, $errno, $errstr, (float)$this->Timeout );
 
-		//write packet
-		if (!fwrite($this->socket, $packet, strlen($packet))) {
-			$this->errstr = "Unable to write to socket.";
-			return false;
+		if( !$this->Socket )
+		{
+			$this->Socket = null;
+
+			throw new Exception( "Failed to connect or create a socket: $errno ($errstr)" );
 		}
 
-		//read packet header
-		$response = fread($this->socket, 16);
-		//$response = stream_get_contents($this->socket);
+		// Set Read/Write timeout
+		\stream_set_timeout( $this->Socket, $this->Timeout );
+	}
 
-		// first byte is type. next 4 are id. dont know what the last 11 are for.
-		$response_data = unpack("c1type/N1id", $response);
+	public function Query( )
+	{
+		$TimeStart = \microtime( true ); // for read timeout purposes
 
-		//read the rest of the stream.
-		$response = fread($this->socket, 2056);
+		// See http://wiki.vg/Protocol (Status Ping)
+		$Data = "\x00"; // packet ID = 0 (varint)
 
-		//split the response into 2 parts.
-		$payload = explode ( "\x00\x01player_\x00\x00" , $response);
+		$Data .= "\x04"; // Protocol version (varint)
+		$Data .= \pack( 'c', \strlen( $this->ServerAddress ) ) . $this->ServerAddress; // Server (varint len + UTF-8 addr)
+		$Data .= \pack( 'n', $this->ServerPort ); // Server port (unsigned short)
+		$Data .= "\x01"; // Next state: status (varint)
 
-		$info_raw = explode("\x00",  rtrim($payload[0], "\x00"));
+		$Data = \pack( 'c', \strlen( $Data ) ) . $Data; // prepend length of packet ID + data
 
-		//extract key->value chunks from info
-		$info = array();
-		foreach (array_chunk($info_raw, 2) as $pair) {
-			list($key, $value) = $pair;
-			//strip possible color format codes from hostname
-			if ($key == "hostname") {
-				$key = 'description';
-				$value = $this->strip_color_codes($value);
+		fwrite( $this->Socket, $Data . "\x01\x00" ); // handshake followed by status ping
+
+		$Length = $this->ReadVarInt( ); // full packet length
+
+		if( $Length < 10 )
+		{
+			return FALSE;
+		}
+
+		$this->ReadVarInt( ); // packet type, in server ping it's 0
+
+		$Length = $this->ReadVarInt( ); // string length
+
+		$Data = "";
+		while( \strlen( $Data ) < $Length )
+		{
+			if( \microtime( true ) - $TimeStart > $this->Timeout )
+			{
+				throw new Exception( 'Server read timed out' );
 			}
-			$info[$key] = $value;
+
+			$Remainder = $Length - \strlen( $Data );
+			$block = \fread( $this->Socket, $Remainder ); // and finally the json string
+			// abort if there is no progress
+			if( !$block )
+			{
+				throw new Exception( 'Server returned too few data' );
+			}
+
+			$Data .= $block;
 		}
 
-		//get player data.
-		$players_raw = rtrim($payload[1], "\x00");
-		$players = array();
-		if (!empty($players_raw)) {
-			$players = explode("\x00", $players_raw);
+		$Data = \json_decode( $Data, true );
+
+		if( \json_last_error( ) !== JSON_ERROR_NONE )
+		{
+			throw new Exception( 'JSON parsing failed: ' . \json_last_error_msg( ) );
 		}
 
-		//attach player data to info for simplicity
-		$info['players'] = $players;
-		$info['hostip'] = gethostbyname($this->host);
-		return $info;
+		return $Data;
 	}
 
-	/**
-	 * Clears Minecraft color codes from a string.
-	 *
-	 * @param String $string - the string to remove the codes from
-	 * @return String - a clean string.
-	 */
-	public function strip_color_codes($string) {
-		return preg_replace('/[\x00-\x1F\x80-\xFF]./', '', $string);
+	public function QueryOldPre17( )
+	{
+		\fwrite( $this->Socket, "\xFE\x01" );
+		$Data = \fread( $this->Socket, 512 );
+		$Len = \strlen( $Data );
+
+		if( $Len < 4 || $Data[ 0 ] !== "\xFF" )
+		{
+			return FALSE;
+		}
+
+		$Data = \substr( $Data, 3 ); // Strip packet header (kick message packet and short length)
+		$Data = \iconv( 'UTF-16BE', 'UTF-8', $Data );
+
+		// Are we dealing with Minecraft 1.4+ server?
+		if( $Data[ 1 ] === "\xA7" && $Data[ 2 ] === "\x31" )
+		{
+			$Data = \explode( "\x00", $Data );
+
+			return Array(
+				'HostName'   => $Data[ 3 ],
+				'Players'    => (int)$Data[ 4 ],
+				'MaxPlayers' => (int)$Data[ 5 ],
+				'Protocol'   => (int)$Data[ 1 ],
+				'Version'    => $Data[ 2 ]
+			);
+		}
+
+		$Data = \explode( "\xA7", $Data );
+
+		return Array(
+			'HostName'   => \substr( $Data[ 0 ], 0, -1 ),
+			'Players'    => isset( $Data[ 1 ] ) ? (int)$Data[ 1 ] : 0,
+			'MaxPlayers' => isset( $Data[ 2 ] ) ? (int)$Data[ 2 ] : 0,
+			'Protocol'   => 0,
+			'Version'    => '1.3'
+		);
 	}
 
+	private function ReadVarInt( )
+	{
+		$i = 0;
+		$j = 0;
+
+		while( true )
+		{
+			$k = @\fgetc( $this->Socket );
+
+			if( $k === FALSE )
+			{
+				return 0;
+			}
+
+			$k = \ord( $k );
+
+			$i |= ( $k & 0x7F ) << $j++ * 7;
+
+			if( $j > 5 )
+			{
+				throw new Exception( 'VarInt too big' );
+			}
+
+			if( ( $k & 0x80 ) != 128 )
+			{
+				break;
+			}
+		}
+
+		return $i;
+	}
+
+	private function ResolveSRV()
+	{
+		if( \ip2long( $this->ServerAddress ) !== false )
+		{
+			return;
+		}
+
+		$Record = @\dns_get_record( '_minecraft._tcp.' . $this->ServerAddress, DNS_SRV );
+
+		if( empty( $Record ) )
+		{
+			return;
+		}
+
+		if( isset( $Record[ 0 ][ 'target' ] ) )
+		{
+			$this->ServerAddress = $Record[ 0 ][ 'target' ];
+		}
+
+		if( isset( $Record[ 0 ][ 'port' ] ) )
+		{
+			$this->ServerPort = $Record[ 0 ][ 'port' ];
+		}
+	}
 }
 
 ?>

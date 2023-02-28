@@ -1,12 +1,11 @@
 body {
-    background: url("res/bg.jpg") no-repeat center center fixed;
+    background: #2b2b2b;
 	-webkit-background-size: cover;
 	-moz-background-size: cover;
 	-o-background-size: cover;
 	background-size: cover;
     line-height: 1.6em; /* fix for thai font*/
 }
-
 
 html, body {
     height: 100%;
@@ -25,6 +24,18 @@ html, body {
 	min-height: 100%;
 }
 
+.console-alert{
+    display: flex!important;
+    flex-basis: 3vh;
+    height: 3vh;
+}
+
+.status-alert{
+    display: flex!important;
+    flex-basis: 4.5vh;
+    height: 4.5vh;
+}
+
 #footer {
     position: absolute;
     bottom: 0;
@@ -32,7 +43,7 @@ html, body {
 }
 
 #groupConsole{
-	height: 300px;
+	height: 20vw;
     overflow: auto;
 }
 
@@ -49,4 +60,27 @@ html, body {
 }
 ::-webkit-scrollbar-thumb:hover {
     background-color: #1D74BF;
+}
+
+/* smartphone */
+@media only screen and (min-height: 800px) and (max-width: 600px) {
+    .row {
+        height: 100vh!important;
+    }
+
+    .console-text {
+        max-width: 95%!important;
+    }
+
+    .console {
+        margin-bottom: 30%!important;
+    }
+
+    .status {
+        margin-bottom: 0;
+    }
+
+    .footer {
+        margin-top: 50%!important;
+    }
 }
